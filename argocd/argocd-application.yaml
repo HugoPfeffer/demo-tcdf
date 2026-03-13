@@ -10,7 +10,9 @@ spec:
   source:
     repoURL: https://github.com/HugoPfeffer/demo-tcdf.git
     targetRevision: main
-    path: argocd/
+    path: argocd
+    directory:
+      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: zabbix-demo

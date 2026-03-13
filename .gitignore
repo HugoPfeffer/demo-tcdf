@@ -3,3 +3,6 @@
 .mcp.json
 .claude/
 .devcontainer/
+cluster-install/
+.openshift_install.log
+customer-requests.md
