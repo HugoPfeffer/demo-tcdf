@@ -10,6 +10,7 @@ spec:
   java_gateway_size: 1
   zabbix_mysql_volumeclaim: zabbix-mysql-pvc
   zabbix_mysqlsecret: zabbix-mysql-secret
+  db_user_configmap: zabbix-mysql-config
   web:
     server_name: "Zabbix Demo"
     timezone: "UTC"

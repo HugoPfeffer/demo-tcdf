@@ -16,6 +16,18 @@ stringData:
   mysql_zabbix_password: "ZabbixDBPass2026!"
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zabbix-mysql-config
+  namespace: zabbix
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  99-custom.cnf: |
+    [mysqld]
+    lower_case_table_names=1
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: zabbix-mysql-pvc
