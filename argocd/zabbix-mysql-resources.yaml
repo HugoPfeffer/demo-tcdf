@@ -21,7 +21,8 @@ metadata:
   name: zabbix-mysql-pvc
   namespace: zabbix-demo
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipHealthCheck
 spec:
   accessModes:
     - ReadWriteOnce
