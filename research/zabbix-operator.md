@@ -16,7 +16,28 @@
 
 ---
 
-## 2. Operands (Custom Resource Definitions)
+## 2. Cluster Environment Context
+
+This reference targets a **live OpenShift cluster** with the following ground-truth facts:
+
+| Attribute | Value |
+|-----------|-------|
+| **OCP version** | 4.20.15 |
+| **Platform** | `None` (bare-metal with Red Hat CNV) |
+| **Topology** | SingleReplica (1 node: control-plane + master + worker) |
+| **Node** | `control-plane-cluster-d45v2-1`, RHCOS 9.6, kernel 5.14.0-570, cri-o 1.33.9 |
+| **Default StorageClass** | `ocs-external-storagecluster-ceph-rbd` (ODF/Ceph RBD) |
+| **Storage backend** | OpenShift Data Foundation (ODF) v4.20.7 with external Ceph cluster |
+| **Zabbix Operator** | Not yet installed (pre-deployment reference) |
+| **Route domain** | `*.apps.cluster-d45v2.dynamic.redhatworkshops.io` |
+| **Cluster API** | `https://api.cluster-d45v2.dynamic.redhatworkshops.io:6443` |
+| **VM Workloads** | The RHEL 9 Zabbix Agent host is a KubeVirt VirtualMachine running on the same cluster, sharing the pod network with the Zabbix Server pods |
+
+> **Important**: This is a **bare-metal environment with Red Hat CNV**. Storage is provided by **external Ceph via ODF** (Ceph RBD). Use `ocs-external-storagecluster-ceph-rbd` for ZabbixFull database PVCs.
+
+---
+
+## 3. Operands (Custom Resource Definitions)
 
 The Zabbix Operator provides **four** operand types:
 
@@ -36,7 +57,7 @@ The Zabbix Operator provides **four** operand types:
 
 ---
 
-## 3. ZabbixFull / ZabbixServer CRD Spec Fields
+## 4. ZabbixFull / ZabbixServer CRD Spec Fields
 
 ### Known Spec Fields
 
@@ -44,7 +65,7 @@ The Zabbix Operator provides **four** operand types:
 |-----------|------|-------------|
 | `spec.replicas` | integer | Number of Zabbix server replicas |
 | `spec.database.type` | string | Database backend: `postgresql` or `mysql` |
-| `spec.database.storage.className` | string | Kubernetes StorageClass name (e.g., `gp3-csi`) |
+| `spec.database.storage.className` | string | Kubernetes StorageClass name (e.g., `ocs-external-storagecluster-ceph-rbd`) |
 | `spec.database.storage.size` | string | PVC size (e.g., `10Gi`) |
 | `spec.web.replicas` | integer | Number of web frontend replicas |
 | `spec.web.service.type` | string | Service type: `ClusterIP`, `NodePort`, `LoadBalancer` |
@@ -76,7 +97,7 @@ spec:
   database:
     type: postgresql
     storage:
-      className: gp3-csi
+      className: ocs-external-storagecluster-ceph-rbd
       size: 10Gi
   web:
     replicas: 1
@@ -86,13 +107,13 @@ spec:
 
 ---
 
-## 4. Installation on OpenShift via OperatorHub
+## 5. Installation on OpenShift via OperatorHub
 
 ### Prerequisites
 
 - OpenShift 4.x cluster (tested with 4.5+)
 - Cluster admin privileges
-- For `ZabbixFull`: a StorageClass that supports dynamic provisioning (e.g., `gp3-csi`)
+- For `ZabbixFull`: a StorageClass that supports dynamic provisioning. On this cluster, use `ocs-external-storagecluster-ceph-rbd` (ODF/Ceph RBD). The cluster uses OpenShift Data Foundation with external Ceph.
 - For `ZabbixServer`: an external MySQL database must already exist
 
 ### Installation Steps (Web Console)
@@ -134,7 +155,7 @@ EOF
 
 ---
 
-## 5. PostgreSQL Configuration
+## 6. PostgreSQL Configuration
 
 ### Managed PostgreSQL (ZabbixFull)
 
@@ -165,7 +186,7 @@ $DB['VERIFY_HOST'] = true;
 
 ---
 
-## 6. ZabbixAgent DaemonSet
+## 7. ZabbixAgent DaemonSet
 
 When deploying the `ZabbixAgent` operand:
 
@@ -181,7 +202,7 @@ tolerations:
 
 ---
 
-## 7. Version Information
+## 8. Version Information
 
 | Component | Version |
 |-----------|---------|
@@ -189,23 +210,23 @@ tolerations:
 | Zabbix 7.0 | LTS release (supported until June 2029) |
 | Zabbix 7.4 | Current release |
 | Zabbix 8.0 | Development |
-| OpenShift tested versions | 4.5.x, 4.6.x+ |
+| OpenShift tested versions | 4.5.x, 4.6.x+, 4.20.x |
 
 ---
 
-## 8. Known Issues and Caveats
+## 9. Known Issues and Caveats
 
 1. **Configuration persistence**: Some `zabbix_server.conf` parameters set in the CR spec may be **reset on pod restart** due to the operator's reconciliation loop overwriting manual changes.
 
-2. **OpenShift Virtualization conflict**: Zabbix support ticket ZBX-26152 reports compatibility issues between the Zabbix Operator (v6.0.38) and OpenShift Virtualization — deploying a Zabbix instance may fail silently when OCP Virtualization is installed.
+2. **OpenShift Virtualization conflict**: Zabbix support ticket ZBX-26152 reports compatibility issues between the Zabbix Operator (v6.0.38) and OpenShift Virtualization. **Since our cluster runs CNV, verify this is resolved in the current operator version before deploying.**
 
-3. **StorageClass must exist**: Ensure the `gp3-csi` StorageClass exists and supports dynamic provisioning before deploying the CR.
+3. **StorageClass must exist**: Ensure the target StorageClass exists and supports dynamic provisioning before deploying the CR. On this cluster, use `ocs-external-storagecluster-ceph-rbd` (ODF Ceph RBD).
 
 4. **Helm Chart alternative**: For Kubernetes (non-OpenShift), Zabbix also provides a Helm chart via `zabbix/zabbix-docker` which gives more granular control.
 
 ---
 
-## 9. Official Documentation URLs
+## 10. Official Documentation URLs
 
 | Resource | URL |
 |----------|-----|

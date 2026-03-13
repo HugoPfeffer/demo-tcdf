@@ -1,6 +1,6 @@
 # Zabbix 7.0 Agent — Installation & Configuration on RHEL 9
 
-> **Scope**: Installing Zabbix Agent on RHEL 9, configuring `zabbix_agentd.conf` for communication via AWS internal NLB, active vs passive checks, port 10051/10050 usage, SELinux/firewall considerations.
+> **Scope**: Installing Zabbix Agent on a KubeVirt VirtualMachine running RHEL 9 on OpenShift, configuring `zabbix_agentd.conf` for communication with Zabbix Server on the same cluster, active vs passive checks, port 10051/10050 usage, SELinux/firewall considerations.
 
 ---
 
@@ -51,19 +51,43 @@ systemctl enable --now zabbix-agent
 
 ---
 
-## 3. Key Configuration Parameters (`zabbix_agentd.conf`)
+## 3. Installation via cloud-init
+
+The Zabbix Agent installation can be automated via cloud-init `userData` in the KubeVirt VirtualMachine spec. The VM uses the cluster's pod network (masquerade mode), so it can resolve Kubernetes Service DNS names via CoreDNS.
+
+```yaml
+cloudInitNoCloud:
+  userData: |
+    #cloud-config
+    # Note: Zabbix repo is not in default RHEL repos; runcmd installs the repo RPM first, then zabbix-agent
+    runcmd:
+      - dnf install -y https://repo.zabbix.com/zabbix/7.0/rhel/9/x86_64/zabbix-release-7.0-1.el9.noarch.rpm
+      - dnf install -y zabbix-agent
+      - sed -i 's/Server=127.0.0.1/Server=zabbix-demo-server.zabbix-system.svc.cluster.local/' /etc/zabbix/zabbix_agentd.conf
+      - sed -i 's/ServerActive=127.0.0.1/ServerActive=zabbix-demo-server.zabbix-system.svc.cluster.local:10051/' /etc/zabbix/zabbix_agentd.conf
+      - sed -i 's/Hostname=Zabbix server/Hostname=rhel9-zabbix-agent-vm/' /etc/zabbix/zabbix_agentd.conf
+      - systemctl enable --now zabbix-agent
+```
+
+> **Note**: The Zabbix repository RPM must be installed first (via `runcmd`), since it is not in the default RHEL repos. Adjust the Service name (`zabbix-demo-server`) and namespace (`zabbix-system`) to match your Zabbix Server deployment.
+
+---
+
+## 4. Key Configuration Parameters (`zabbix_agentd.conf`)
 
 **Config file location:** `/etc/zabbix/zabbix_agentd.conf`
 
-### Critical Parameters for NLB Setup
+### Critical Parameters for Connecting to OpenShift Server
 
-| Parameter | Description | Default | NLB Setup Value |
+| Parameter | Description | Default | Demo Setup Value |
 |-----------|-------------|---------|-----------------|
-| `Server` | Comma-delimited list of Zabbix server IPs/DNS names. Used for **passive checks** — incoming connections accepted only from these addresses. | `127.0.0.1` | `<AWS_INTERNAL_NLB_DNS_NAME>` |
-| `ServerActive` | IP:port of Zabbix server(s) for **active checks**. Agent initiates outbound connections. | `127.0.0.1` | `<AWS_INTERNAL_NLB_DNS_NAME>:10051` |
-| `Hostname` | Unique, case-sensitive hostname. **Must match exactly** what is configured in the Zabbix frontend. | System hostname | e.g., `my-rhel9-ec2-instance` |
+| `Server` | Comma-delimited list of Zabbix server IPs/DNS names. Used for **passive checks** — incoming connections accepted only from these addresses. | `127.0.0.1` | `zabbix-demo-server.zabbix-system.svc.cluster.local` |
+| `ServerActive` | IP:port of Zabbix server(s) for **active checks**. Agent initiates outbound connections. | `127.0.0.1` | `zabbix-demo-server.zabbix-system.svc.cluster.local:10051` |
+| `Hostname` | Unique, case-sensitive hostname. **Must match exactly** what is configured in the Zabbix frontend. | System hostname | e.g., `rhel9-zabbix-agent-vm` |
 | `ListenPort` | Port the agent listens on for passive checks. | `10050` | `10050` |
 | `StartAgents` | Number of pre-forked agent processes for passive checks. `0` = disable passive checks entirely. | `10` | Range: 0-100 |
+
+> **Note**: Since the VM runs on the pod network, it can reach any ClusterIP Service directly. Use the Zabbix Server's Kubernetes Service DNS name: `<svc>.<namespace>.svc.cluster.local`
 
 ### Other Important Parameters
 
@@ -93,14 +117,15 @@ systemctl enable --now zabbix-agent
 | `TLSPSKIdentity` | Pre-shared key identity string | Empty |
 | `TLSPSKFile` | Full path to file containing the pre-shared key | Empty |
 
-### Example Configuration for AWS NLB
+### Example Configuration for KubeVirt VM
 
 ```ini
 # /etc/zabbix/zabbix_agentd.conf
+# VM runs on pod network; DNS resolution works via cluster CoreDNS
 
-Server=internal-zabbix-nlb-1234567890.us-east-1.elb.amazonaws.com
-ServerActive=internal-zabbix-nlb-1234567890.us-east-1.elb.amazonaws.com:10051
-Hostname=my-rhel9-ec2-instance
+Server=zabbix-demo-server.zabbix-system.svc.cluster.local
+ServerActive=zabbix-demo-server.zabbix-system.svc.cluster.local:10051
+Hostname=rhel9-zabbix-agent-vm
 
 LogFile=/var/log/zabbix/zabbix_agentd.log
 
@@ -108,12 +133,12 @@ ListenIP=0.0.0.0
 ListenPort=10050
 
 # Optional: metadata for autoregistration
-# HostMetadata=linux rhel9 ec2
+# HostMetadata=linux rhel9
 ```
 
 ---
 
-## 4. Zabbix Agent (Legacy) vs Zabbix Agent 2 (Modern)
+## 5. Zabbix Agent (Legacy) vs Zabbix Agent 2 (Modern)
 
 | Feature | zabbix-agent (Legacy) | zabbix-agent2 (Modern) |
 |---------|----------------------|----------------------|
@@ -126,11 +151,11 @@ ListenPort=10050
 | **Daemon binary** | `zabbix_agentd` | `zabbix_agent2` |
 | **Maturity** | Very stable, long history | Newer, actively developed |
 
-**Recommendation for this demo**: `zabbix-agent` (legacy) is simpler and perfectly adequate for basic OS monitoring via NLB. Choose `zabbix-agent2` if native plugin-based monitoring is needed.
+**Recommendation for this demo**: `zabbix-agent` (legacy) is simpler and perfectly adequate for basic OS monitoring. Choose `zabbix-agent2` if native plugin-based monitoring is needed.
 
 ---
 
-## 5. Active vs Passive Checks
+## 6. Active vs Passive Checks
 
 ### Passive Checks (Server-initiated)
 
@@ -138,7 +163,7 @@ ListenPort=10050
 - **Port**: TCP **10050** (agent's `ListenPort`)
 - **Flow**: Server connects to agent, requests a specific item value, agent responds
 - **Config**: `Server=<server_ip_or_dns>`
-- **NLB consideration**: Requires NLB to forward traffic from server to agent's port 10050 — more complex through an NLB
+- **KubeVirt VM consideration**: Both active and passive checks work natively. The VM is on the pod network, so the Zabbix Server pods can reach the agent's port 10050 directly via pod-to-pod networking.
 - **Disable with**: `StartAgents=0`
 
 ### Active Checks (Agent-initiated)
@@ -150,27 +175,30 @@ ListenPort=10050
   2. Agent collects data locally per the received item list
   3. Agent sends collected data back to server on port 10051
 - **Config**: `ServerActive=<server_ip_or_dns>` and `Hostname=<exact_hostname>`
-- **NLB consideration**: **Preferred mode** — agent initiates all outbound connections to port 10051 on the NLB. No inbound connectivity to the agent required.
+- **KubeVirt VM consideration**: Both directions work. The VM can reach port 10051 on the Zabbix Server's ClusterIP Service directly — no NodePort or external exposure needed.
 - **Refresh interval**: `RefreshActiveChecks` parameter (default 5s in Zabbix 7.0)
 
-### Recommendation for NLB Architecture
+### Recommendation for KubeVirt VM on OpenShift
 
-**Use active checks (`ServerActive`) as the primary method.** The agent initiates all connections outbound to port 10051, which is the most NAT/NLB-friendly approach.
+Both active and passive checks work natively since the VM and Zabbix Server pods share the same cluster SDN. Port 10050 (inbound to agent) and port 10051 (outbound to server) are directly reachable via pod-to-pod networking.
 
 ---
 
-## 6. Port Usage Summary
+## 7. Port Usage Summary
 
 | Port | Direction | Protocol | Purpose |
 |------|-----------|----------|---------|
 | **10050** | Inbound to agent | TCP | Passive checks — server connects to agent |
 | **10051** | Outbound from agent | TCP | Active checks — agent connects to server trapper |
 
-For the NLB setup, port **10051** is the critical path. The NLB listener on TCP/10051 forwards to the Zabbix server's trapper port inside OpenShift.
+Since the VM and Zabbix Server run on the same cluster SDN, both directions work directly via pod-to-pod networking.
+
+- **10050** (inbound to agent): Zabbix Server pods connect to the VM's pod IP on port 10050 for passive checks.
+- **10051** (outbound to server): The VM connects to the Zabbix Server's ClusterIP Service on port 10051 for active checks.
 
 ---
 
-## 7. Firewall (firewalld) Configuration
+## 8. Firewall (firewalld) Configuration
 
 ```bash
 # For passive checks (if needed): allow inbound on port 10050
@@ -186,7 +214,7 @@ firewall-cmd --list-ports
 
 ---
 
-## 8. SELinux Considerations on RHEL 9
+## 9. SELinux Considerations on RHEL 9
 
 RHEL 9 runs SELinux in `enforcing` mode by default. The Zabbix RPM packages include proper SELinux policies.
 
@@ -215,7 +243,7 @@ ls -lZ /etc/zabbix/zabbix_agentd.conf
 
 ---
 
-## 9. Systemd Service Management
+## 10. Systemd Service Management
 
 ```bash
 # Enable and start
@@ -245,7 +273,7 @@ zabbix_get -s <agent_ip> -k system.hostname
 
 ---
 
-## 10. Zabbix 7.0 Version-Specific Notes
+## 11. Zabbix 7.0 Version-Specific Notes
 
 - **Zabbix 7.0 is an LTS release** — supported until June 2029
 - Latest patch: **7.0.24**
@@ -256,7 +284,7 @@ zabbix_get -s <agent_ip> -k system.hostname
 
 ---
 
-## 11. Official Documentation URLs
+## 12. Official Documentation URLs
 
 | Resource | URL |
 |----------|-----|

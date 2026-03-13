@@ -51,7 +51,28 @@ spec:
 
 ---
 
-## 2. TLS Termination Types
+## 2. Cluster Environment Context
+
+| Detail | Value |
+|--------|-------|
+| **OCP Version** | 4.20.15 |
+| **Platform** | `None` (bare-metal with Red Hat CNV, SingleReplica) |
+| **Route Domain** | `*.apps.cluster-d45v2.dynamic.redhatworkshops.io` |
+| **cert-manager Operator** | v1.18.1 — INSTALLED and healthy (`cert-manager-operator.v1.18.1` in `cert-manager-operator` namespace) |
+| **cert-manager namespace** | `cert-manager` (Active) |
+| **cert-manager-operator namespace** | `cert-manager-operator` (Active) |
+
+**cert-manager status**: The Red Hat cert-manager Operator is installed and running. No additional installation needed for cert-manager itself.
+
+**openshift-routes controller**: The Red Hat cert-manager Operator does **not** include the openshift-routes controller. It must be installed separately via Helm into the `cert-manager` namespace (see Section 6 for installation instructions). Verify whether it is already deployed:
+
+```bash
+oc get pods -n cert-manager -l app.kubernetes.io/name=openshift-routes
+```
+
+---
+
+## 3. TLS Termination Types
 
 ### Edge Termination
 
@@ -77,7 +98,7 @@ spec:
 
 ---
 
-## 3. insecureEdgeTerminationPolicy Options
+## 4. insecureEdgeTerminationPolicy Options
 
 | Value | Behavior |
 |-------|----------|
@@ -89,7 +110,7 @@ Only applies to `edge` and `reencrypt` termination types. Has no effect on `pass
 
 ---
 
-## 4. Red Hat Cert-Manager Operator for OpenShift
+## 5. Red Hat Cert-Manager Operator for OpenShift
 
 ### Overview
 
@@ -122,7 +143,7 @@ The **cert-manager Operator for Red Hat OpenShift** is a cluster-wide service fo
 
 ---
 
-## 5. The openshift-routes Controller
+## 6. The openshift-routes Controller
 
 ### What It Is
 
@@ -162,7 +183,7 @@ oc apply -f <(helm template openshift-routes -n cert-manager \
 
 ---
 
-## 6. Route Annotations for Automatic Certificate Issuance
+## 7. Route Annotations for Automatic Certificate Issuance
 
 ### Minimum Required
 
@@ -218,7 +239,7 @@ cert-manager.io/issuer: "my-issuer"                   # Shorthand for namespace 
 
 ---
 
-## 7. ClusterIssuer vs Issuer
+## 8. ClusterIssuer vs Issuer
 
 | Feature | Issuer | ClusterIssuer |
 |---------|--------|---------------|
@@ -261,23 +282,25 @@ spec:
 
 ---
 
-## 8. Prerequisites Checklist
+## 9. Prerequisites Checklist
 
 Before the cert-manager annotations on a Route will work:
 
 1. **cert-manager installed** — via Red Hat Cert-Manager Operator (OperatorHub) or Helm
+   > **This cluster**: Already done. cert-manager Operator v1.18.1 is installed and healthy in `cert-manager-operator` namespace. Pods are running in `cert-manager` namespace.
 2. **openshift-routes controller installed** — separate controller, installed via Helm in the cert-manager namespace
+   > **Important**: The Red Hat cert-manager Operator does **not** bundle the openshift-routes controller. It must be installed separately via the Helm chart from `oci://ghcr.io/cert-manager/charts/openshift-routes` into the `cert-manager` namespace (see Section 6).
 3. **Issuer or ClusterIssuer created and Ready**:
    ```bash
    oc get clusterissuers
    oc get issuers -n <namespace>
    ```
-4. **DNS configured** — Route's `spec.host` must resolve to the OpenShift router
+4. **DNS configured** — Route's `spec.host` must resolve to the OpenShift router (on this cluster: `*.apps.cluster-d45v2.dynamic.redhatworkshops.io`)
 5. **Network access** — For ACME/HTTP-01: port 80 must be accessible from the internet; ACME server must be reachable from the cluster
 
 ---
 
-## 9. Complete Example for Zabbix Web UI
+## 10. Complete Example for Zabbix Web UI
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -303,7 +326,7 @@ metadata:
     cert-manager.io/issuer-name: letsencrypt-prod
     cert-manager.io/issuer-kind: ClusterIssuer
 spec:
-  host: zabbix.apps.your-cluster.domain.com
+  host: zabbix-zabbix-system.apps.cluster-d45v2.dynamic.redhatworkshops.io
   to:
     kind: Service
     name: zabbix-demo-web
@@ -322,7 +345,7 @@ After applying, the openshift-routes controller will:
 
 ---
 
-## 10. OpenShift-Specific Notes vs Kubernetes Ingress
+## 11. OpenShift-Specific Notes vs Kubernetes Ingress
 
 - **Routes are NOT Kubernetes Ingress**: Routes are OpenShift-specific (`route.openshift.io/v1`). Standard K8s uses `networking.k8s.io/v1 Ingress`.
 - **Separate controller needed**: For K8s Ingress, cert-manager's built-in ingress-shim is used. For OpenShift Routes, the separate openshift-routes controller is required.
@@ -333,13 +356,15 @@ After applying, the openshift-routes controller will:
 
 ---
 
-## 11. Official Documentation URLs
+## 12. Official Documentation URLs
 
 | Resource | URL |
 |----------|-----|
 | Red Hat: cert-manager Operator (OCP 4.21) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/security_and_compliance/cert-manager-operator-for-red-hat-openshift |
+| Red Hat: cert-manager Operator (OCP 4.20) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/security_and_compliance/cert-manager-operator-for-red-hat-openshift |
 | Red Hat: cert-manager Operator (OCP 4.18) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/security_and_compliance/cert-manager-operator-for-red-hat-openshift |
 | Red Hat: OpenShift Routes (OCP 4.21) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/ingress_and_load_balancing/routes |
+| Red Hat: OpenShift Routes (OCP 4.20) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/ingress_and_load_balancing/routes |
 | Red Hat Blog: cert-manager Operator | https://www.redhat.com/en/blog/cert-manager-operator-openshift |
 | cert-manager.io: Issuer Configuration | https://cert-manager.io/docs/configuration/ |
 | cert-manager.io: Requesting Certificates | https://cert-manager.io/docs/usage/ |

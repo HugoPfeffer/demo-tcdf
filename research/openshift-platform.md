@@ -1,6 +1,6 @@
 # OpenShift Container Platform — Official Reference
 
-> **Scope**: OperatorHub, Operator Lifecycle Manager (OLM), namespace/project management, AWS EBS CSI Driver (gp3-csi StorageClass), Security Context Constraints (SCCs), and RBAC for operator workloads on OpenShift 4.x/AWS.
+> **Scope**: OperatorHub, Operator Lifecycle Manager (OLM), namespace/project management, OpenShift Data Foundation (ODF) with Ceph RBD storage, Security Context Constraints (SCCs), and RBAC for operator workloads on OpenShift 4.x (bare-metal with Red Hat CNV).
 
 ---
 
@@ -69,6 +69,51 @@ spec:
     - name: "community-operators"
       disabled: false
 ```
+
+---
+
+## 1.1 Cluster Environment Context
+
+> **Single source of truth** for the target cluster. All other research files reference these facts.
+
+| Property | Value |
+|----------|-------|
+| **OCP Version** | 4.20.15 |
+| **Platform** | `None` (bare-metal with Red Hat CNV / Container-Native Virtualization) |
+| **Topology** | SingleReplica (1 node: control-plane + master + worker) |
+| **Node** | `control-plane-cluster-d45v2-1` |
+| **OS / Kernel** | RHCOS 9.6 / 5.14.0-570 |
+| **Container Runtime** | cri-o 1.33.9 |
+| **Internal IP** | 10.10.10.10 |
+| **Cluster Name** | `cluster-d45v2` |
+| **Infrastructure Name** | `cluster-d45v2-9xb6p` |
+| **Cluster API** | `https://api.cluster-d45v2.dynamic.redhatworkshops.io:6443` |
+| **Route Domain** | `*.apps.cluster-d45v2.dynamic.redhatworkshops.io` |
+| **Default StorageClass** | `ocs-external-storagecluster-ceph-rbd` (Ceph RBD) |
+| **Storage Backend** | OpenShift Data Foundation (ODF) v4.20.7 — external Ceph cluster, CephCSI operator v4.20.7 |
+| **Virtualization platform** | Red Hat OpenShift Virtualization (CNV) / KubeVirt — hosts KubeVirt VirtualMachines alongside container workloads. The RHEL 9 Zabbix Agent VM runs on the same cluster and pod network as the Zabbix Server. |
+
+### Installed Operators
+
+| Operator | Version |
+|----------|---------|
+| cert-manager | v1.18.1 |
+| OpenShift GitOps (ArgoCD) | v1.19.2 |
+| Keycloak (RHBK) | v26.4.10 |
+| OpenShift Data Foundation (ODF) | v4.20.7 |
+| OpenShift Virtualization (CNV) | — for running RHEL 9 VMs on the cluster |
+| OpenShift Lightspeed | v1.0.10 |
+
+### StorageClasses
+
+| StorageClass | Provisioner | Binding Mode | Default | Use Case |
+|-------------|-------------|-------------|---------|----------|
+| `ocs-external-storagecluster-ceph-rbd` | `openshift-storage.rbd.csi.ceph.com` | WaitForFirstConsumer | **Yes** | Block storage for databases, stateful workloads |
+| `ocs-external-storagecluster-ceph-rbd-immediate` | `openshift-storage.rbd.csi.ceph.com` | Immediate | No | Block storage when pre-binding is needed |
+| `ocs-external-storagecluster-cephfs` | `openshift-storage.cephfs.csi.ceph.com` | — | No | Shared filesystem (ReadWriteMany) |
+| `openshift-storage.noobaa.io` | `openshift-storage.noobaa.io` | — | No | S3-compatible object storage |
+
+> **Storage is provided by ODF/Ceph only. No cloud provider storage drivers exist on this cluster.**
 
 ---
 
@@ -156,19 +201,23 @@ metadata:
 
 ---
 
-## 4. AWS EBS CSI Driver & gp3-csi StorageClass
+## 4. OpenShift Data Foundation & Ceph RBD Storage
 
 ### Overview
 
-OpenShift 4.18+ installs the following **by default** in `openshift-cluster-csi-drivers`:
-- **AWS EBS CSI Driver Operator** — manages the CSI driver and default StorageClass
-- **AWS EBS CSI driver** — enables creating and mounting AWS EBS PVs
+This cluster uses **OpenShift Data Foundation (ODF) v4.20.7** in **external mode**, connecting to a pre-existing Ceph cluster rather than deploying Ceph pods locally. ODF provides software-defined storage via Ceph, exposing block (RBD), filesystem (CephFS), and object (NooBaa/S3) storage through CSI drivers.
 
-### gp3-csi StorageClass
+Key components:
+- **ODF Operator** — manages the StorageCluster CR and CSI driver deployments
+- **CephCSI Operator v4.20.7** — manages Ceph CSI plugins (RBD + CephFS)
+- **External Ceph cluster** — the actual storage backend; ODF connects to it via RADOS credentials
 
-- **Default for clusters installed with OCP 4.10+**: `gp3-csi` is the default StorageClass
-- **Provisioner**: `ebs.csi.aws.com`
-- Older clusters (pre-4.10) may have `gp2` as default with `kubernetes.io/aws-ebs` (in-tree)
+### Default StorageClass: `ocs-external-storagecluster-ceph-rbd`
+
+- **Provisioner**: `openshift-storage.rbd.csi.ceph.com`
+- **Binding Mode**: `WaitForFirstConsumer` — PVCs stay `Pending` until a pod is scheduled
+- **Volume Expansion**: enabled (`allowVolumeExpansion: true`)
+- **Recommended for**: database workloads (PostgreSQL, Zabbix), stateful applications requiring dedicated block devices
 
 **StorageClass Definition:**
 
@@ -176,44 +225,49 @@ OpenShift 4.18+ installs the following **by default** in `openshift-cluster-csi-
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
 metadata:
-  name: gp3-csi
+  name: ocs-external-storagecluster-ceph-rbd
   annotations:
     storageclass.kubernetes.io/is-default-class: 'true'
-provisioner: ebs.csi.aws.com
+provisioner: openshift-storage.rbd.csi.ceph.com
 parameters:
-  type: gp3
+  clusterID: openshift-storage
+  csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
+  csi.storage.k8s.io/controller-expand-secret-namespace: openshift-storage
+  csi.storage.k8s.io/fstype: ext4
+  csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
+  csi.storage.k8s.io/node-stage-secret-namespace: openshift-storage
+  csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
+  csi.storage.k8s.io/provisioner-secret-namespace: openshift-storage
+  imageFeatures: layering
+  imageFormat: "2"
+  pool: ceph-rbd
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 ```
 
-**With KMS encryption:**
+### Available StorageClasses
 
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: gp3-csi-encrypted
-parameters:
-  fsType: ext4
-  encrypted: "true"
-  kmsKeyId: <ARN-of-KMS-key>
-provisioner: ebs.csi.aws.com
-reclaimPolicy: Delete
-volumeBindingMode: WaitForFirstConsumer
-```
+| StorageClass | Type | Binding Mode | Access Modes | Best For |
+|-------------|------|-------------|-------------|----------|
+| `ocs-external-storagecluster-ceph-rbd` (default) | Block (RBD) | WaitForFirstConsumer | RWO | Databases, single-pod stateful workloads |
+| `ocs-external-storagecluster-ceph-rbd-immediate` | Block (RBD) | Immediate | RWO | Pre-provisioned volumes, batch jobs |
+| `ocs-external-storagecluster-cephfs` | Filesystem (CephFS) | Immediate | RWO, RWX | Shared storage across multiple pods |
+| `openshift-storage.noobaa.io` | Object (S3) | — | — | S3-compatible object storage via ObjectBucketClaim |
 
-### EBS Volume Types: gp2 vs gp3
+### Ceph RBD vs CephFS
 
-| Feature | gp2 | gp3 |
-|---------|-----|-----|
-| **Baseline IOPS** | 3 IOPS/GiB (min 100, max 16,000) | 3,000 IOPS (regardless of size) |
-| **Max IOPS** | 16,000 | 16,000 |
-| **Baseline Throughput** | Tied to volume size (max 250 MiB/s) | 125 MiB/s baseline (any size) |
-| **Max Throughput** | 250 MiB/s | 1,000 MiB/s |
-| **Cost** | Higher (bundled) | ~20% cheaper (decoupled IOPS/throughput) |
+| Feature | Ceph RBD (Block) | CephFS (Filesystem) |
+|---------|------------------|---------------------|
+| **Access Mode** | ReadWriteOnce (RWO) — single pod | ReadWriteMany (RWX) — multiple pods |
+| **Protocol** | RADOS Block Device mapped to node | FUSE or kernel CephFS mount |
+| **Performance** | Higher IOPS, lower latency — optimized for databases | Good throughput for shared reads/writes |
+| **Snapshots** | Supported via CSI VolumeSnapshot | Supported via CSI VolumeSnapshot |
+| **Volume Expansion** | Online expansion supported | Online expansion supported |
+| **Use Case** | PostgreSQL, MySQL, single-writer stateful apps | Shared config, logs, media, CMS content |
+| **Default SC on cluster** | `ocs-external-storagecluster-ceph-rbd` (**yes**) | `ocs-external-storagecluster-cephfs` |
 
-**Key advantage**: A 10 GiB gp3 volume gets 3,000 IOPS, vs only 30 IOPS on gp2.
+**Key difference from cloud block storage**: Ceph RBD is also block storage, but it is **network-attached** (RADOS protocol over the cluster network) rather than tied to a specific cloud AZ. This means volumes are not constrained to a single availability zone and can be accessed from any node that has network connectivity to the Ceph cluster.
 
 ### Verifying StorageClass Availability
 
@@ -221,30 +275,31 @@ volumeBindingMode: WaitForFirstConsumer
 # List all StorageClasses
 oc get storageclass
 
-# Describe a specific StorageClass
-oc describe storageclass gp3-csi
+# Describe the default StorageClass
+oc describe storageclass ocs-external-storagecluster-ceph-rbd
 
-# Verify CSI driver pods
-oc get pods -n openshift-cluster-csi-drivers
+# Verify Ceph CSI driver pods
+oc get pods -n openshift-storage -l app=csi-rbdplugin
+oc get pods -n openshift-storage -l app=csi-rbdplugin-provisioner
 
-# Check ClusterCSIDriver status
-oc get clustercsidriver ebs.csi.aws.com -o yaml
+# Check ODF StorageCluster status
+oc get storagecluster -n openshift-storage
+
+# Verify external Ceph connection health
+oc get cephcluster -n openshift-storage -o jsonpath='{.items[0].status.ceph.health}'
 ```
 
 ### Managing the Default StorageClass
 
 ```bash
 # Remove default from current
-oc patch storageclass gp3-csi -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "false"}}}'
+oc patch storageclass ocs-external-storagecluster-ceph-rbd \
+  -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "false"}}}'
 
 # Set new default
-oc patch storageclass my-custom-sc -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "true"}}}'
+oc patch storageclass my-custom-sc \
+  -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "true"}}}'
 ```
-
-Via ClusterCSIDriver management:
-- `spec.storageClassState: Managed` — operator creates and manages the default StorageClass
-- `spec.storageClassState: Unmanaged` — operator does not reconcile (allows custom edits)
-- `spec.storageClassState: Removed` — operator deletes the StorageClass
 
 ---
 
@@ -311,16 +366,20 @@ rules:
 ## 6. Prerequisites and Gotchas
 
 1. **Cluster admin required** for installing operators and managing SCCs
-2. **AWS IAM permissions**: EBS CSI Driver Operator requires appropriate IAM roles for EBS operations
-3. **OLM must be running** (default on OCP 4.x): verify with `oc get pods -n openshift-operator-lifecycle-manager`
-4. **Namespace must exist** before creating a Subscription targeting it
-5. **Multiple default StorageClasses**: Having >1 default causes PVCs to get the most recently created one. Alert `MultipleDefaultStorageClasses` fires.
-6. **gp2 vs gp3 on upgrades**: Clusters upgraded from pre-4.10 may still use `gp2`. Verify with `oc get sc`.
-7. **SCC reset on upgrade**: Default SCCs are reset during cluster upgrades — always create custom SCCs
-8. **OperatorGroup scope**: The `OperatorGroup` in a namespace defines the watch scope. For single-namespace operators, ensure it targets only that namespace.
-9. **PVC WaitForFirstConsumer**: `gp3-csi` uses this binding mode. PVCs remain `Pending` until a pod is scheduled. This is expected.
-10. **EBS AZ constraint**: EBS volumes are AZ-specific. Pod must be scheduled in the same AZ as the volume.
-11. **Approval strategy**: Use `Manual` in production for change control over operator updates.
+2. **OLM must be running** (default on OCP 4.x): verify with `oc get pods -n openshift-operator-lifecycle-manager`
+3. **Namespace must exist** before creating a Subscription targeting it
+4. **Multiple default StorageClasses**: Having >1 default causes PVCs to get the most recently created one. Alert `MultipleDefaultStorageClasses` fires.
+5. **SCC reset on upgrade**: Default SCCs are reset during cluster upgrades — always create custom SCCs
+6. **OperatorGroup scope**: The `OperatorGroup` in a namespace defines the watch scope. For single-namespace operators, ensure it targets only that namespace.
+7. **PVC WaitForFirstConsumer**: `ocs-external-storagecluster-ceph-rbd` uses this binding mode. PVCs remain `Pending` until a pod is scheduled. This is expected — use `ocs-external-storagecluster-ceph-rbd-immediate` if you need pre-binding.
+8. **Approval strategy**: Use `Manual` in production for change control over operator updates.
+9. **External Ceph connectivity**: ODF in external mode depends on network connectivity to the Ceph cluster. If the external Ceph cluster is unreachable, all RBD and CephFS provisioning fails. Monitor with `oc get cephcluster -n openshift-storage`.
+10. **Ceph health checks**: Before deploying storage-dependent workloads, verify Ceph health: `oc get cephcluster -n openshift-storage -o jsonpath='{.items[0].status.ceph.health}'` should return `HEALTH_OK`.
+11. **RBD vs CephFS for workload types**: Use Ceph RBD (default SC) for databases and single-writer workloads requiring low latency. Use CephFS only when ReadWriteMany access is required (shared filesystems across pods). Do not use CephFS for database WAL/data directories.
+12. **SingleReplica topology**: This cluster has a single node. There is no HA for the control plane or workloads. Pod eviction and rescheduling will not help during node failure.
+13. **Ceph RBD image features**: The default StorageClass uses `imageFeatures: layering`. Ensure Ceph cluster supports the required features; mismatches cause mount failures.
+14. **OpenShift Virtualization prerequisite**: The OpenShift Virtualization operator must be installed before creating VirtualMachine CRs. Install via OperatorHub (search for "OpenShift Virtualization").
+15. **KubeVirt masquerade networking**: KubeVirt VMs using `masquerade` networking are on the pod network and can reach ClusterIP Services directly — no external load balancer needed for intra-cluster VM-to-pod communication.
 
 ---
 
@@ -334,12 +393,14 @@ rules:
 | Installing Operators in Namespace | https://docs.openshift.com/container-platform/4.7/operators/user/olm-installing-operators-in-namespace.html |
 | All Operators Docs (OCP 4.18) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html-single/operators/index |
 | Projects | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/building_applications/projects |
-| CSI Storage (EBS) | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/storage/using-container-storage-interface-csi#persistent-storage-csi-ebs |
+| Red Hat OpenShift Data Foundation | https://docs.redhat.com/en/documentation/red_hat_openshift_data_foundation/ |
+| ODF 4.18 — Managing Storage | https://docs.redhat.com/en/documentation/red_hat_openshift_data_foundation/4.18/html/managing_and_allocating_storage_resources/index |
+| ODF — External Mode | https://docs.redhat.com/en/documentation/red_hat_openshift_data_foundation/4.18/html/deploying_openshift_data_foundation_in_external_mode/index |
+| OCP Storage — CSI Overview | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/storage/using-container-storage-interface-csi |
 | Managing Default StorageClass | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/storage/using-container-storage-interface-csi#persistent-storage-csi-sc-manage |
 | Switch Default StorageClass (KCS) | https://access.redhat.com/solutions/6779501 |
 | Managing SCCs | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/authentication_and_authorization/managing-pod-security-policies |
 | Auth & Authorization | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html-single/authentication_and_authorization/index |
 | OCP 4.18 Landing Page | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/ |
 | OLM Framework Upstream | https://olm.operatorframework.io/docs/concepts/operators-on-cluster/ |
-| AWS EBS CSI Driver (GitHub) | https://github.com/openshift/aws-ebs-csi-driver |
 | OCP CLI Tools | https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/cli_tools/openshift-cli-oc |
