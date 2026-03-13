@@ -1,20 +1,77 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Domain: Zabbix monitoring integration demo on Red Hat OpenShift.
+  Purpose: Showcase the Zabbix Operator deploying a full monitoring stack
+  (Zabbix Server + PostgreSQL + Web UI) with a Zabbix Agent reporting live
+  metrics, all managed via ArgoCD GitOps.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Platform:
+    - OpenShift 4.20.15, bare-metal SingleReplica with Red Hat CNV
+    - Cluster: cluster-d45v2.dynamic.redhatworkshops.io
+    - Route domain: *.apps.cluster-d45v2.dynamic.redhatworkshops.io
+    - Default StorageClass: ocs-external-storagecluster-ceph-rbd (Ceph RBD via ODF)
+
+  Pre-installed operators (out of scope to deploy):
+    - Zabbix Operator 6.0.40 (certified) — provides ZabbixFull, ZabbixAgent CRDs
+    - OpenShift GitOps (ArgoCD) v1.19.2
+    - cert-manager Operator v1.18.1
+
+  Tech stack & conventions:
+    - All manifests are plain Kubernetes/OpenShift YAML in the argocd/ directory
+    - ArgoCD Application CR syncs the entire argocd/ directory
+    - Namespace: zabbix-demo (isolated, disposable)
+    - TLS: edge-terminated OpenShift Route + cert-manager with openshift-routes controller
+    - Zabbix Agent runs as a sidecar container in a pod (not a KubeVirt VM)
+    - Agent connects to the Zabbix Server via ClusterIP Service on ports 10051/10050
+    - The ZabbixFull CRD deploys server, web frontend, Java gateway, and managed PostgreSQL
+    - SCC grants (anyuid or nonroot) and RBAC are required for Zabbix workloads
+    - No external load balancers or NodePorts needed — all traffic is intra-cluster SDN
+
+  Key constraints:
+    - SingleReplica cluster — no HA, no pod rescheduling on failure
+    - Storage is Ceph RBD only (ODF external mode) — no cloud provider storage
+    - PVCs use WaitForFirstConsumer binding mode
+    - The openshift-routes controller for cert-manager must be installed separately via Helm
+    - A ClusterIssuer (self-signed or ACME) must exist before the Route gets a certificate
+    - Do NOT modify default OpenShift SCCs; create Role/RoleBinding granting use instead
+    - The Zabbix Agent hostname must match exactly what is configured in the Zabbix frontend
+
+  Repository layout:
+    argocd/
+    ├── namespace.yaml           # zabbix-demo namespace
+    ├── zabbix-full.yaml         # ZabbixFull CR
+    ├── zabbix-web-route.yaml    # Route with cert-manager annotations
+    ├── cluster-issuer.yaml      # ClusterIssuer for TLS
+    ├── sample-app.yaml          # Deployment with Zabbix Agent sidecar
+    ├── rbac.yaml                # SCC grants and RBAC
+    └── argocd-application.yaml  # ArgoCD Application CR
+
+  Success criteria:
+    - All pods in zabbix-demo Running and healthy
+    - Zabbix Web Dashboard accessible via TLS Route
+    - Zabbix Agent visible as connected host in the Dashboard
+    - Live metrics (CPU, memory, disk, network) displayed
+    - Single ArgoCD sync deploys everything
+
+rules:
+  proposal:
+    - Focus on the "what" and "why" — this is a customer-facing demo, not a production deployment
+    - Clearly separate in-scope (deploy via ArgoCD manifests) from out-of-scope (pre-installed operators, cluster infra)
+    - Include a "Non-goals" section listing what this demo does NOT cover
+    - Reference the ZabbixFull CRD as the single entry point for the server stack
+    - Keep under 600 words — this is a focused demo, not an architecture proposal
+  design:
+    - Specify exact YAML resource kinds, API versions, and namespaces for every manifest
+    - Document the ArgoCD sync wave ordering if resources have dependencies
+    - Detail the Zabbix Agent sidecar container configuration (Server, ServerActive, Hostname params)
+    - Explain the cert-manager annotation flow on the Route (issuer-name, issuer-kind, termination type)
+    - Call out the SCC/RBAC approach — which service accounts need which SCC and why
+    - Mention the ClusterIP Service that bridges the agent to the server (ports 10051 and 10050)
+    - Note that the openshift-routes controller must be pre-installed for auto-TLS on Routes
+  tasks:
+    - Each task produces exactly one YAML manifest file in the argocd/ directory
+    - Order tasks by ArgoCD sync dependency — namespace first, then RBAC, then CRs, then Route, then sample app, then ArgoCD Application last
+    - Include verification steps per task (e.g., oc get, oc describe) as sub-items
+    - Keep each task completable in under 30 minutes
+    - The final task should be the ArgoCD Application CR that ties everything together
