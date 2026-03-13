@@ -1,0 +1,19 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: zabbix-web
+  namespace: zabbix-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    cert-manager.io/issuer-kind: ClusterIssuer
+    cert-manager.io/issuer-name: zabbix-selfsigned
+spec:
+  host: zabbix-demo.apps.cluster-d45v2.dynamic.redhatworkshops.io
+  to:
+    kind: Service
+    name: zabbix-web
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

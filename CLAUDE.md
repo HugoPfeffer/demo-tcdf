@@ -18,7 +18,7 @@ This is a **demo project** — prioritize simplicity and fast deployment over pr
 
 ## Pre-installed Operators (DO NOT deploy these)
 
-- **Zabbix Operator** 6.0.40 (certified) — provides `ZabbixFull`, `ZabbixAgent` CRDs
+- **Zabbix Operator** 6.0.44 (certified) — provides `ZabbixFull`, `ZabbixAgent` CRDs (API group: `kubernetes.zabbix.com`)
 - **OpenShift GitOps** v1.19.2 (ArgoCD) — provides `Application` CRD
 - **cert-manager** v1.18.1 + `openshift-routes` controller (pre-installed via Helm)
 
@@ -29,9 +29,10 @@ argocd/                         # ALL manifests go here — ArgoCD syncs this di
 ├── namespace.yaml              # v1/Namespace (sync-wave 0)
 ├── rbac.yaml                   # Role + RoleBinding for SCC grants (sync-wave 1)
 ├── cluster-issuer.yaml         # cert-manager ClusterIssuer (sync-wave 1)
+├── zabbix-mysql-resources.yaml # MySQL Secret + PVC for ZabbixFull (sync-wave 1)
 ├── zabbix-full.yaml            # ZabbixFull CR (sync-wave 2)
 ├── zabbix-web-route.yaml       # Route with cert-manager TLS (sync-wave 3)
-├── sample-app.yaml             # Deployment + Zabbix Agent sidecar (sync-wave 3)
+├── sample-app.yaml             # nginx + load-generator + Zabbix Agent sidecar (sync-wave 3)
 └── argocd-application.yaml     # ArgoCD Application CR (sync-wave 4)
 research/                       # Background research docs (read-only reference)
 openspec/                       # OpenSpec change tracking
@@ -44,7 +45,7 @@ openspec/                       # OpenSpec change tracking
 | Wave | Resources | Why |
 |------|-----------|-----|
 | 0 | Namespace | Must exist before any namespaced resources |
-| 1 | RBAC, ClusterIssuer | SCC grants needed before operator workloads; issuer needed before Route |
+| 1 | RBAC, ClusterIssuer, MySQL Secret+PVC | SCC grants needed before operator workloads; issuer needed before Route; MySQL resources needed before ZabbixFull |
 | 2 | ZabbixFull CR | Requires namespace + SCC grants to be in place |
 | 3 | Route, Sample App | Route needs ClusterIssuer (wave 1) + web Service (wave 2); app needs server Service (wave 2) |
 | 4 | ArgoCD Application | Ties everything together last |
@@ -58,7 +59,7 @@ Use these exact API versions — do not guess or use deprecated versions:
 - Namespace: `v1`
 - Role/RoleBinding: `rbac.authorization.k8s.io/v1`
 - ClusterIssuer: `cert-manager.io/v1`
-- ZabbixFull: `zabbix.com/v1alpha1`
+- ZabbixFull: `kubernetes.zabbix.com/v1alpha1`
 - Route: `route.openshift.io/v1`
 - Deployment: `apps/v1`
 - Service: `v1`
@@ -80,7 +81,7 @@ Use these exact API versions — do not guess or use deprecated versions:
 
 ### PVC Binding Behavior
 - `ocs-external-storagecluster-ceph-rbd` uses `WaitForFirstConsumer` binding mode. PVCs will stay `Pending` until the pod is scheduled — this is expected, not an error.
-- Always set `storageClassName: ocs-external-storagecluster-ceph-rbd` explicitly on PostgreSQL PVCs.
+- Always set `storageClassName: ocs-external-storagecluster-ceph-rbd` explicitly on MySQL PVCs.
 
 ### TLS / Route
 - Route uses `spec.tls.termination: edge` (TLS terminates at the router, HTTP to pod).
@@ -89,10 +90,21 @@ Use these exact API versions — do not guess or use deprecated versions:
 - The `openshift-routes` controller must be pre-installed for Route annotations to work.
 
 ### ZabbixFull CRD
-- Use `kind: ZabbixFull` (NOT `ZabbixServer`) — it includes managed PostgreSQL.
-- `ZabbixServer` requires an external MySQL database and is wrong for this demo.
-- The CRD is proprietary — inspect the installed CRD on-cluster with `oc describe crd zabbixfulls.zabbix.com` for the full spec.
+- Use `kind: ZabbixFull` (NOT `ZabbixServer`) — it includes a managed MySQL database.
+- API group is `kubernetes.zabbix.com/v1alpha1` (NOT `zabbix.com/v1alpha1`).
+- CRD full name: `zabbixfulls.kubernetes.zabbix.com`
+- **Required fields**: `spec.web_size`, `spec.java_gateway_size`, `spec.zabbix_mysql_volumeclaim` (PVC name), `spec.zabbix_mysqlsecret` (Secret name), `spec.web.server_name`, `spec.web.timezone`
+- The MySQL Secret must contain keys: `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`
+- The PVC must be pre-created and referenced by name in `zabbix_mysql_volumeclaim`
+- The CRD is proprietary — inspect on-cluster with `oc describe crd zabbixfulls.kubernetes.zabbix.com`
+- Operator supports `web_enable_route: true` to auto-create a Route (but we use a custom Route with cert-manager annotations instead)
 - Known issue ZBX-26152: compatibility issues between Zabbix Operator v6.0.38 and OpenShift Virtualization (CNV). Verify resolved in current version.
+
+### Zabbix Web Dashboard
+- Default credentials: `Admin` (capital A) / `zabbix`
+- Web UI served on port 8080 via the operator-created Service
+- Agent host registration: manual via Configuration > Hosts, or auto-registration via Actions
+- Recommended template: "Linux by Zabbix agent active" for sidecar agents
 
 ### ArgoCD Application
 - `spec.syncPolicy.automated` with `prune: true` and `selfHeal: true`
@@ -108,6 +120,7 @@ The sample app uses a `zabbix/zabbix-agent2` sidecar with these critical env var
 | `ZBX_SERVER_HOST` | `zabbix-server.zabbix-demo.svc.cluster.local` | Server address for passive checks |
 | `ZBX_ACTIVESERVERS` | `zabbix-server.zabbix-demo.svc.cluster.local:10051` | Server address for active checks |
 | `ZBX_HOSTNAME` | `sample-app-agent` | Must match Zabbix frontend host record |
+| `ZBX_METADATAITEM` | `system.uname` | Enables auto-registration with host metadata |
 
 Ports: 10051 (active checks, agent → server), 10050 (passive checks, server → agent).
 
@@ -134,7 +147,7 @@ oc get route -n zabbix-demo
 curl -kI https://zabbix-demo.apps.cluster-d45v2.dynamic.redhatworkshops.io
 
 # Sample app agent
-oc get pods -n zabbix-demo -l app=sample-app   # 2/2 containers ready
+oc get pods -n zabbix-demo -l app=sample-app   # 3/3 containers ready (nginx + load-gen + agent)
 oc logs -n zabbix-demo -l app=sample-app -c zabbix-agent2
 
 # ArgoCD
@@ -170,7 +183,7 @@ Launch a sub-agent (general-purpose or Explore type) and instruct it to:
 
 - High availability or replica counts > 1
 - Production hardening (network policies, resource limits, secrets management)
-- External or self-managed PostgreSQL
+- External or self-managed MySQL/PostgreSQL
 - CNV/VM-based Zabbix Agent (agent runs as sidecar only)
 - Custom Zabbix templates, triggers, or alerting
 - Multi-cluster or federated monitoring

@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zabbix-mysql-secret
+  namespace: zabbix-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: "ZabbixDemo2026!"
+  MYSQL_DATABASE: "zabbix"
+  MYSQL_USER: "zabbix"
+  MYSQL_PASSWORD: "ZabbixDBPass2026!"
+  mysql_root_password: "ZabbixDemo2026!"
+  mysql_zabbix_username: "zabbix"
+  mysql_zabbix_password: "ZabbixDBPass2026!"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zabbix-mysql-pvc
+  namespace: zabbix-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ocs-external-storagecluster-ceph-rbd
+  resources:
+    requests:
+      storage: 10Gi

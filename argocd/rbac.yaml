@@ -1,0 +1,38 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: zabbix-scc-anyuid
+  namespace: zabbix-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups:
+      - security.openshift.io
+    resources:
+      - securitycontextconstraints
+    resourceNames:
+      - anyuid
+    verbs:
+      - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: zabbix-scc-anyuid
+  namespace: zabbix-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: zabbix-scc-anyuid
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: zabbix-demo
+  - kind: ServiceAccount
+    name: zabbix-operator-manager
+    namespace: zabbix-demo
+  - kind: ServiceAccount
+    name: zabbix-agent
+    namespace: zabbix-demo

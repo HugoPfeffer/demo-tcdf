@@ -1,0 +1,15 @@
+apiVersion: kubernetes.zabbix.com/v1alpha1
+kind: ZabbixFull
+metadata:
+  name: zabbix
+  namespace: zabbix-demo
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  web_size: 1
+  java_gateway_size: 1
+  zabbix_mysql_volumeclaim: zabbix-mysql-pvc
+  zabbix_mysqlsecret: zabbix-mysql-secret
+  web:
+    server_name: "Zabbix Demo"
+    timezone: "UTC"
