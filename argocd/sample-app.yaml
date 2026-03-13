@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: registry.access.redhat.com/ubi9/nginx-122:latest
+          image: nginxinc/nginx-unprivileged:1.27-alpine
           ports:
             - containerPort: 8080
               protocol: TCP
@@ -44,8 +44,6 @@ spec:
           env:
             - name: ZBX_SERVER_HOST
               value: zabbix-server.zabbix-demo.svc.cluster.local
-            - name: ZBX_ACTIVESERVERS
-              value: zabbix-server.zabbix-demo.svc.cluster.local:10051
             - name: ZBX_HOSTNAME
               value: sample-app-agent
             - name: ZBX_METADATAITEM
