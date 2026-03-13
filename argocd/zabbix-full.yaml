@@ -2,7 +2,7 @@ apiVersion: kubernetes.zabbix.com/v1alpha1
 kind: ZabbixFull
 metadata:
   name: zabbix
-  namespace: zabbix-demo
+  namespace: zabbix
   annotations:
     argocd.argoproj.io/sync-wave: "2"
 spec:

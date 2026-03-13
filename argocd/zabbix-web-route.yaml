@@ -2,7 +2,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: zabbix-web
-  namespace: zabbix-demo
+  namespace: zabbix
   annotations:
     argocd.argoproj.io/sync-wave: "3"
     cert-manager.io/issuer-kind: ClusterIssuer

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: sample-app
-  namespace: zabbix-demo
+  namespace: zabbix
   labels:
     app: sample-app
   annotations:
@@ -43,7 +43,7 @@ spec:
               protocol: TCP
           env:
             - name: ZBX_SERVER_HOST
-              value: zabbix-server.zabbix-demo.svc.cluster.local
+              value: zabbix-server.zabbix.svc.cluster.local
             - name: ZBX_HOSTNAME
               value: sample-app-agent
             - name: ZBX_METADATAITEM
@@ -53,7 +53,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sample-app-agent
-  namespace: zabbix-demo
+  namespace: zabbix
   labels:
     app: sample-app
   annotations:

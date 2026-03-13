@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: zabbix-mysql-secret
-  namespace: zabbix-demo
+  namespace: zabbix
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 type: Opaque
@@ -19,7 +19,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: zabbix-mysql-pvc
-  namespace: zabbix-demo
+  namespace: zabbix
   annotations:
     argocd.argoproj.io/sync-wave: "2"
 spec:

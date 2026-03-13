@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: zabbix-scc-anyuid
-  namespace: zabbix-demo
+  namespace: zabbix
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 rules:
@@ -19,7 +19,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: zabbix-scc-anyuid
-  namespace: zabbix-demo
+  namespace: zabbix
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 roleRef:
@@ -29,10 +29,10 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: default
-    namespace: zabbix-demo
+    namespace: zabbix
   - kind: ServiceAccount
     name: zabbix-operator-manager
-    namespace: zabbix-demo
+    namespace: zabbix
   - kind: ServiceAccount
     name: zabbix-agent
-    namespace: zabbix-demo
+    namespace: zabbix
