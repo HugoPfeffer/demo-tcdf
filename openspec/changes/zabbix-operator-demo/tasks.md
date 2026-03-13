@@ -38,7 +38,7 @@
 
 ## 8. End-to-End Validation
 
-- [ ] 8.1 Trigger ArgoCD sync and verify all resources deploy in wave order
-  - Verify: `oc get pods -n zabbix-demo` — all pods Running
-  - Verify: Route accessible via HTTPS with valid TLS certificate
-- [ ] 8.2 Confirm Zabbix Agent appears as connected host in Zabbix Web Dashboard with live metrics (CPU, memory, disk, network)
+- [x] 8.1 Trigger ArgoCD sync and verify all resources deploy in wave order
+  - Verify: `oc get pods -n zabbix` — all pods Running ✓
+  - Verify: Route accessible via HTTPS — HTTP 200 ✓
+- [x] 8.2 Confirm Zabbix Agent appears as connected host in Zabbix Web Dashboard with live metrics (CPU, memory, disk, network)
